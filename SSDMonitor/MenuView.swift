@@ -62,7 +62,7 @@ public struct MenuView: View {
         HStack {
             Image(systemName: watcher.isMounted ? "externaldrive.fill" : "externaldrive.badge.xmark")
                 .font(.title2)
-                .foregroundColor(watcher.isMounted ? .accentColor : .secondary)
+                .foregroundColor(watcher.isMounted ? .accentColor : .orange)
             
             VStack(alignment: .leading, spacing: 2) {
                 Text(watcher.targetVolumeName)
@@ -70,21 +70,21 @@ public struct MenuView: View {
                     .lineLimit(1)
                 
                 HStack(spacing: 6) {
-                    Text(watcher.bsdIdentifier)
-                        .font(.caption2)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Color.secondary.opacity(0.15))
-                        .cornerRadius(4)
-                    
                     if watcher.isMounted {
+                        Text(watcher.bsdIdentifier)
+                            .font(.caption2)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.secondary.opacity(0.15))
+                            .cornerRadius(4)
+                        
                         Label("Montado", systemImage: "checkmark.circle.fill")
                             .font(.caption2)
                             .foregroundColor(.green)
                     } else {
                         Label("Desconectado", systemImage: "xmark.circle.fill")
                             .font(.caption2)
-                            .foregroundColor(.red)
+                            .foregroundColor(.orange)
                     }
                 }
             }
@@ -337,20 +337,65 @@ public struct MenuView: View {
     // MARK: - Disconnected View
     
     private var disconnectedView: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "externaldrive.badge.xmark")
-                .font(.system(size: 44))
-                .foregroundColor(.secondary)
+        VStack(spacing: 16) {
+            ZStack {
+                Circle()
+                    .fill(Color.orange.opacity(0.12))
+                    .frame(width: 76, height: 76)
+                
+                Image(systemName: "externaldrive.badge.xmark")
+                    .font(.system(size: 36, weight: .regular))
+                    .foregroundColor(.orange)
+            }
+            .padding(.top, 6)
             
-            Text("Volume não montado")
-                .font(.headline)
+            VStack(spacing: 4) {
+                Text("SSD Desconectado")
+                    .font(.title3)
+                    .fontWeight(.semibold)
+                
+                Text("Aguardando conexão de \"\(watcher.targetVolumeName)\"")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+            }
             
-            Text("Conecte o SSD \"\(watcher.targetVolumeName)\" em \(watcher.targetMountPoint) para monitorar.")
-                .font(.caption)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "info.circle.fill")
+                        .foregroundColor(.blue)
+                        .font(.body)
+                    Text("O SSDMonitor detectará automaticamente o disco assim que ele for conectado ao Mac em \(watcher.targetMountPoint).")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .padding(12)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Color.secondary.opacity(0.08))
+            )
+            .padding(.horizontal, 4)
+            
+            Button(action: {
+                watcher.refreshAll()
+            }) {
+                HStack(spacing: 6) {
+                    Image(systemName: "arrow.clockwise")
+                        .rotationEffect(.degrees(watcher.isRefreshing ? 360 : 0))
+                        .animation(watcher.isRefreshing ? Animation.linear(duration: 1).repeatForever(autoreverses: false) : .default, value: watcher.isRefreshing)
+                    Text("Verificar Conexão Agora")
+                        .fontWeight(.medium)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 7)
+            }
+            .buttonStyle(.bordered)
+            .tint(.accentColor)
         }
-        .padding(.vertical, 30)
+        .padding(.vertical, 14)
+        .padding(.horizontal, 8)
         .frame(maxWidth: .infinity)
     }
     
@@ -373,53 +418,69 @@ public struct MenuView: View {
             }
             
             HStack(spacing: 8) {
-                Button(action: {
-                    watcher.ejectVolume(force: false)
-                }) {
-                    HStack(spacing: 4) {
-                        if watcher.isEjecting {
-                            ProgressView()
-                                .controlSize(.small)
-                        } else {
-                            Image(systemName: "eject.fill")
-                        }
-                        Text("Ejetar Seguro")
-                            .fontWeight(.medium)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 6)
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(.orange)
-                .disabled(!watcher.isMounted || watcher.isEjecting)
-                
-                if watcher.errorMessage != nil {
+                if watcher.isMounted {
                     Button(action: {
-                        watcher.ejectVolume(force: true)
+                        watcher.ejectVolume(force: false)
                     }) {
                         HStack(spacing: 4) {
-                            Image(systemName: "bolt.horizontal.fill")
-                            Text("Forçar")
+                            if watcher.isEjecting {
+                                ProgressView()
+                                    .controlSize(.small)
+                            } else {
+                                Image(systemName: "eject.fill")
+                            }
+                            Text("Ejetar Seguro")
                                 .fontWeight(.medium)
                         }
+                        .frame(maxWidth: .infinity)
                         .padding(.vertical, 6)
-                        .padding(.horizontal, 8)
                     }
                     .buttonStyle(.borderedProminent)
-                    .tint(.red)
-                    .disabled(!watcher.isMounted || watcher.isEjecting)
-                    .help("Força o desmonte do volume ignorando arquivos travados pelo sistema")
+                    .tint(.orange)
+                    .disabled(watcher.isEjecting)
+                    
+                    if watcher.errorMessage != nil {
+                        Button(action: {
+                            watcher.ejectVolume(force: true)
+                        }) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "bolt.horizontal.fill")
+                                Text("Forçar")
+                                    .fontWeight(.medium)
+                            }
+                            .padding(.vertical, 6)
+                            .padding(.horizontal, 8)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.red)
+                        .disabled(watcher.isEjecting)
+                        .help("Força o desmonte do volume ignorando arquivos travados pelo sistema")
+                    }
+                } else {
+                    HStack {
+                        Label("SSDMonitor v1.0", systemImage: "internaldrive")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                        Spacer()
+                    }
                 }
                 
                 Button(action: {
                     NSApplication.shared.terminate(nil)
                 }) {
-                    Image(systemName: "power")
-                        .foregroundColor(.secondary)
-                        .padding(6)
+                    HStack(spacing: 4) {
+                        Image(systemName: "power")
+                        if !watcher.isMounted {
+                            Text("Encerrar")
+                                .font(.caption)
+                                .fontWeight(.medium)
+                        }
+                    }
+                    .foregroundColor(watcher.isMounted ? .secondary : .red)
+                    .padding(6)
                 }
                 .buttonStyle(.plain)
-                .help("Sair do SSD Monitor")
+                .help("Sair do SSDMonitor")
             }
         }
     }
