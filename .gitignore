@@ -17,8 +17,10 @@ xcuserdata/
 *.dSYM.zip
 *.dSYM
 
-# Built binaries
+# Built binaries and releases
 *.app
+*.dmg
+*.zip
 SSDMonitorApp
 main
 
