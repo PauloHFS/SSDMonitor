@@ -29,7 +29,7 @@ public protocol CommandRunner: Sendable {
 
 /// Adaptador de produção: executa comandos do sistema usando a API Process() do Foundation.
 public final class SystemCommandRunner: CommandRunner, @unchecked Sendable {
-    public init() {}
+    public nonisolated init() {}
 
     public func run(executable: String, arguments: [String], timeoutSeconds: Double = 2.0) async -> CommandExecutionResult {
         let startTime = Date()

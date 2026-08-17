@@ -8,7 +8,7 @@
 import Foundation
 
 public final class AppLogger: @unchecked Sendable {
-    public static let shared = AppLogger()
+    public nonisolated static let shared = AppLogger()
     
     private let logFileURL: URL
     private let queue = DispatchQueue(label: "com.ssdmonitor.logger", qos: .utility)
