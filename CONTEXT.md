@@ -31,3 +31,6 @@ _Avoid_: Polling loop, timer thread
 **Login Item Service**:
 The system service registering the application for automatic launch upon user login into macOS.
 _Avoid_: Auto-start script, crontab, startup item
+**Volume Auto-Discovery**:
+The dynamic enumeration of non-system mounted external user drives under `/Volumes` available for selection and monitoring.
+_Avoid_: Static volume list, hardcoded disk names
