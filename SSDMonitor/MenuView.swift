@@ -16,6 +16,7 @@ private let byteFormatter: ByteCountFormatter = {
 
 public struct MenuView: View {
     @ObservedObject var watcher: DiskWatcher
+    @StateObject private var autoStart = AutoStartManager.shared
     @State private var expandedPID: pid_t? = nil
     
     public init(watcher: DiskWatcher) {
@@ -452,8 +453,8 @@ public struct MenuView: View {
                             watcher.ejectVolume(force: true)
                         }) {
                             HStack(spacing: 4) {
-                                Image(systemName: "bolt.horizontal.fill")
-                                Text("Forçar")
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                Text("Forçar Ejeção")
                                     .fontWeight(.medium)
                             }
                             .padding(.vertical, 6)
@@ -464,28 +465,34 @@ public struct MenuView: View {
                         .disabled(watcher.isEjecting)
                         .help("Força o desmonte do volume ignorando arquivos travados pelo sistema")
                     }
-                } else {
-                    HStack {
-                        Label("SSDMonitor v1.0", systemImage: "internaldrive")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                        Spacer()
-                    }
                 }
+            }
+            
+            Divider()
+                .padding(.vertical, 2)
+            
+            HStack {
+                Toggle("Iniciar com o Mac", isOn: Binding(
+                    get: { autoStart.isAutoStartEnabled },
+                    set: { autoStart.toggleAutoStart($0) }
+                ))
+                .toggleStyle(.checkbox)
+                .font(.caption2)
+                .foregroundColor(.secondary)
+                
+                Spacer()
                 
                 Button(action: {
                     NSApplication.shared.terminate(nil)
                 }) {
                     HStack(spacing: 4) {
                         Image(systemName: "power")
-                        if !watcher.isMounted {
-                            Text("Encerrar")
-                                .font(.caption)
-                                .fontWeight(.medium)
-                        }
+                        Text("Encerrar")
+                            .font(.caption2)
+                            .fontWeight(.medium)
                     }
-                    .foregroundColor(watcher.isMounted ? .secondary : .red)
-                    .padding(6)
+                    .foregroundColor(.red)
+                    .padding(4)
                 }
                 .buttonStyle(.plain)
                 .help("Sair do SSDMonitor")

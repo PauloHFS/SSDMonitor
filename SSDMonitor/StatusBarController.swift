@@ -67,20 +67,47 @@ public final class StatusBarController: NSObject {
             }
             .store(in: &cancellables)
 
+        // 6. Visibilidade dinâmica do statusItem e Notificações de montagem/desmonte
         watcher.$isMounted
-            .dropFirst()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] isMounted in
                 guard let self = self else { return }
+                self.statusItem.isVisible = isMounted
                 if !isMounted && self.popover.isShown && self.watcher.errorMessage == nil {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
-                        guard let self = self, !self.watcher.isMounted, self.watcher.errorMessage == nil else { return }
-                        self.popover.performClose(nil)
-                    }
+                    self.popover.performClose(nil)
                 }
             }
             .store(in: &cancellables)
 
+        watcher.$isMounted
+            .dropFirst()
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] isMounted in
+                guard let self = self else { return }
+                if isMounted {
+                    NotificationManager.shared.sendNotification(
+                        title: "SSD Conectado",
+                        body: "O SSD '\(self.watcher.targetVolumeName)' foi reconhecido. Telemetria e monitoramento ativos."
+                    )
+                } else {
+                    NotificationManager.shared.sendNotification(
+                        title: "SSD Desconectado / Ejetado",
+                        body: "O SSD '\(self.watcher.targetVolumeName)' foi ejetado com segurança."
+                    )
+                }
+            }
+            .store(in: &cancellables)
+
+        // Visibilidade inicial baseada na presença do disco
+        statusItem.isVisible = watcher.isMounted
+        if !watcher.isMounted {
+            NotificationManager.shared.sendNotification(
+                title: "SSDMonitor em Segundo Plano",
+                body: "Aguardando conexão de '\(watcher.targetVolumeName)'. O ícone surgirá na barra de menus ao conectar."
+            )
+        }
+        
         updateStatusButton(temperature: watcher.temperature, isMounted: watcher.isMounted)
     }
 

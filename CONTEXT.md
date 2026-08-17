@@ -19,3 +19,15 @@ _Avoid_: Active app, background task, open program
 **Safe Ejection**:
 The graceful unmounting and detaching of the Target Volume from the operating system to prevent data loss or file corruption.
 _Avoid_: Forced unmount, unplugging, disconnecting
+
+**Dynamic Status Item Visibility**:
+The conditional visibility of the NSStatusItem menu bar icon based on the mounting state of the Target Volume.
+_Avoid_: Permanent icon, ghost icon, hidden window
+
+**Background Volume Observer**:
+The background daemon thread listening for operating system volume mount and unmount events.
+_Avoid_: Polling loop, timer thread
+
+**Login Item Service**:
+The system service registering the application for automatic launch upon user login into macOS.
+_Avoid_: Auto-start script, crontab, startup item

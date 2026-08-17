@@ -26,6 +26,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApplication.shared.setActivationPolicy(.accessory)
+        NotificationManager.shared.requestAuthorization()
+        AutoStartManager.shared.updateStatus()
         statusBarController = StatusBarController(watcher: watcher)
     }
 }
