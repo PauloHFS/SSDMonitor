@@ -152,8 +152,8 @@ public final class DiskWatcher: ObservableObject {
             return
         }
         
-        guard !isRefreshing else {
-            logWatcher("Refresh ignorado: ciclo de atualização anterior ainda em andamento.")
+        guard !isRefreshing && !isEjecting else {
+            logWatcher("Refresh ignorado: ejeção ou ciclo de atualização anterior em andamento.")
             return
         }
         self.isRefreshing = true
@@ -239,6 +239,11 @@ public final class DiskWatcher: ObservableObject {
         FileManager.default.changeCurrentDirectoryPath("/")
         
         Task {
+            // Aguarda o encerramento de qualquer ciclo prévio de refresh de telemetria
+            while self.isRefreshing {
+                try? await Task.sleep(nanoseconds: 50_000_000)
+            }
+            
             do {
                 try await self.telemetry.unmountVolume(at: self.targetVolume, force: force)
                 await MainActor.run {

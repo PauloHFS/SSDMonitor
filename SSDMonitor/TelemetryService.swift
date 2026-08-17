@@ -240,8 +240,14 @@ public actor TelemetryService {
             }
         }
         
-        return processDict.map { (pid, info) in
-            ActiveProcess(
+        let currentAppPID = ProcessInfo.processInfo.processIdentifier
+        let ignoredNames: Set<String> = ["ssdmonitor", "lsof", "smartctl", "diskutil"]
+        
+        return processDict.compactMap { (pid, info) in
+            if pid == currentAppPID || ignoredNames.contains(info.name.lowercased()) {
+                return nil
+            }
+            return ActiveProcess(
                 pid: pid,
                 name: info.name,
                 openFiles: Array(info.openFiles).sorted()

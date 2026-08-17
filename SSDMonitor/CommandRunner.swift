@@ -38,6 +38,7 @@ public final class SystemCommandRunner: CommandRunner, @unchecked Sendable {
             DispatchQueue.global(qos: .userInitiated).async {
                 let process = Process()
                 process.executableURL = URL(fileURLWithPath: executable)
+                process.currentDirectoryURL = URL(fileURLWithPath: "/")
                 process.arguments = arguments
 
                 let outPipe = Pipe()
