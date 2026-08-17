@@ -94,11 +94,15 @@ public struct MenuView: View {
             Button(action: {
                 watcher.refreshAll()
             }) {
-                Image(systemName: "arrow.clockwise")
-                    .rotationEffect(.degrees(watcher.isRefreshing ? 360 : 0))
-                    .animation(watcher.isRefreshing ? Animation.linear(duration: 1).repeatForever(autoreverses: false) : .default, value: watcher.isRefreshing)
+                if watcher.isRefreshing {
+                    ProgressView()
+                        .controlSize(.small)
+                } else {
+                    Image(systemName: "arrow.clockwise")
+                }
             }
             .buttonStyle(.plain)
+            .disabled(watcher.isRefreshing)
             .help("Atualizar agora")
         }
     }
@@ -382,9 +386,12 @@ public struct MenuView: View {
                 watcher.refreshAll()
             }) {
                 HStack(spacing: 6) {
-                    Image(systemName: "arrow.clockwise")
-                        .rotationEffect(.degrees(watcher.isRefreshing ? 360 : 0))
-                        .animation(watcher.isRefreshing ? Animation.linear(duration: 1).repeatForever(autoreverses: false) : .default, value: watcher.isRefreshing)
+                    if watcher.isRefreshing {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Image(systemName: "arrow.clockwise")
+                    }
                     Text("Verificar Conexão Agora")
                         .fontWeight(.medium)
                 }
@@ -393,6 +400,7 @@ public struct MenuView: View {
             }
             .buttonStyle(.bordered)
             .tint(.accentColor)
+            .disabled(watcher.isRefreshing)
         }
         .padding(.vertical, 14)
         .padding(.horizontal, 8)
