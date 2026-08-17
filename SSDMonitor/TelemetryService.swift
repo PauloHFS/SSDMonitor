@@ -10,7 +10,7 @@ import AppKit
 
 // MARK: - Logger Helper
 
-public func logTelemetry(_ message: String, isError: Bool = false) {
+public nonisolated func logTelemetry(_ message: String, isError: Bool = false) {
     let formatter = DateFormatter()
     formatter.dateFormat = "HH:mm:ss.SSS"
     let timeStr = formatter.string(from: Date())
@@ -27,7 +27,7 @@ public struct ActiveProcess: Identifiable, Hashable, Sendable {
     public let name: String
     public let openFiles: [String]
 
-    public init(pid: pid_t, name: String, openFiles: [String]) {
+    public nonisolated init(pid: pid_t, name: String, openFiles: [String]) {
         self.pid = pid
         self.name = name
         self.openFiles = openFiles
@@ -37,12 +37,12 @@ public struct ActiveProcess: Identifiable, Hashable, Sendable {
 public struct StorageInfo: Sendable {
     public let totalBytes: Int64
     public let freeBytes: Int64
-    public var usedBytes: Int64 { totalBytes - freeBytes }
-    public var usedRatio: Double {
+    public nonisolated var usedBytes: Int64 { totalBytes - freeBytes }
+    public nonisolated var usedRatio: Double {
         totalBytes > 0 ? Double(usedBytes) / Double(totalBytes) : 0.0
     }
     
-    public init(totalBytes: Int64, freeBytes: Int64) {
+    public nonisolated init(totalBytes: Int64, freeBytes: Int64) {
         self.totalBytes = totalBytes
         self.freeBytes = freeBytes
     }
@@ -54,7 +54,7 @@ public struct SMARTData: Sendable {
     public let modelName: String?
     public let rawError: String?
 
-    public init(temperature: Int?, smartPassed: Bool?, modelName: String?, rawError: String? = nil) {
+    public nonisolated init(temperature: Int?, smartPassed: Bool?, modelName: String?, rawError: String? = nil) {
         self.temperature = temperature
         self.smartPassed = smartPassed
         self.modelName = modelName

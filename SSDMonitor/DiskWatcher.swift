@@ -11,7 +11,7 @@ import Combine
 
 // MARK: - Logger Helper
 
-public func logWatcher(_ message: String, isError: Bool = false) {
+public nonisolated func logWatcher(_ message: String, isError: Bool = false) {
     let formatter = DateFormatter()
     formatter.dateFormat = "HH:mm:ss.SSS"
     let timeStr = formatter.string(from: Date())
@@ -47,11 +47,13 @@ public final class DiskWatcher: ObservableObject {
     // MARK: - Private Properties
     
     private var timer: Timer?
-    private var notificationObservers: [NSObjectProtocol] = []
-    
-    // MARK: - Initialization
-    
-    public init() {
+ private var notificationObservers: [NSObjectProtocol] = []
+ private let telemetry: TelemetryProvider
+ 
+ // MARK: - Initialization
+ 
+ public init(telemetry: TelemetryProvider = TelemetryService.shared) {
+    self.telemetry = telemetry
         // Garante que o diretório de trabalho (CWD) do processo seja o diretório raiz '/',
         // evitando que o próprio SSDMonitor segure o vnode do volume externo e bloqueie a ejeção.
         FileManager.default.changeCurrentDirectoryPath("/")
@@ -136,7 +138,9 @@ public final class DiskWatcher: ObservableObject {
             self.rawSmartError = nil
             self.storageInfo = nil
             self.activeProcesses = []
-            self.statusMessage = "Volume desconectado ou não montado"
+            if self.statusMessage == nil {
+                self.statusMessage = "Volume desconectado ou não montado"
+            }
             return
         }
         
@@ -155,7 +159,7 @@ public final class DiskWatcher: ObservableObject {
                 }
             }
             
-            let telemetry = TelemetryService.shared
+            let telemetry = self.telemetry
             
             // 1. Identificador Físico Alvo (Detectado dinamicamente via diskutil info)
             let detectedNode = await telemetry.detectBSDNode(forVolumePath: targetMountPoint)
@@ -195,7 +199,7 @@ public final class DiskWatcher: ObservableObject {
     public func killProcess(pid: pid_t) {
         logWatcher("Comando recebido: Encerrar PID \(pid)...")
         Task {
-            let success = await TelemetryService.shared.killProcess(pid: pid)
+            let success = await self.telemetry.killProcess(pid: pid)
             if success {
                 self.statusMessage = "Processo \(pid) encerrado com sucesso."
                 self.errorMessage = nil
@@ -221,7 +225,7 @@ public final class DiskWatcher: ObservableObject {
         
         Task {
             do {
-                try await TelemetryService.shared.unmountVolume(at: targetMountPoint)
+                try await self.telemetry.unmountVolume(at: targetMountPoint)
                 await MainActor.run {
                     self.isMounted = false
                     self.isEjecting = false
