@@ -9,16 +9,6 @@ import Foundation
 import AppKit
 import Combine
 
-// MARK: - Logger Helper
-
-public nonisolated func logWatcher(_ message: String, isError: Bool = false) {
-    let formatter = DateFormatter()
-    formatter.dateFormat = "HH:mm:ss.SSS"
-    let timeStr = formatter.string(from: Date())
-    let icon = isError ? "⚠️" : "📊"
-    print("[\(timeStr)] [DiskWatcher] \(icon) \(message)")
-    fflush(stdout)
-}
 
 @MainActor
 public final class DiskWatcher: ObservableObject {

@@ -54,12 +54,14 @@ public final class SystemCommandRunner: CommandRunner, @unchecked Sendable {
                 group.enter()
                 DispatchQueue.global().async {
                     outData = outPipe.fileHandleForReading.readDataToEndOfFile()
+                    try? outPipe.fileHandleForReading.close()
                     group.leave()
                 }
 
                 group.enter()
                 DispatchQueue.global().async {
                     errData = errPipe.fileHandleForReading.readDataToEndOfFile()
+                    try? errPipe.fileHandleForReading.close()
                     group.leave()
                 }
 

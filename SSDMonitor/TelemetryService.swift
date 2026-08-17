@@ -8,16 +8,6 @@
 import Foundation
 import AppKit
 
-// MARK: - Logger Helper
-
-public nonisolated func logTelemetry(_ message: String, isError: Bool = false) {
-    let formatter = DateFormatter()
-    formatter.dateFormat = "HH:mm:ss.SSS"
-    let timeStr = formatter.string(from: Date())
-    let icon = isError ? "❌" : "ℹ️"
-    print("[\(timeStr)] [TelemetryService] \(icon) \(message)")
-    fflush(stdout)
-}
 
 // MARK: - Modelos de Dados
 
@@ -193,14 +183,16 @@ public actor TelemetryService {
         let result = await runSubprocess(executable: "/usr/sbin/lsof", arguments: ["-w", "-F", "pcn", volumePath], timeoutSeconds: 1.5)
         
         guard let output = String(data: result.stdout, encoding: .utf8), !output.isEmpty else {
-            logTelemetry("lsof concluído em \(String(format: "%.3fs", result.duration)): Nenhum processo ativo retornado.")
+            let errStr = String(data: result.stderr, encoding: .utf8) ?? ""
+            logTelemetry("lsof concluído em \(String(format: "%.3fs", result.duration)) (exitCode \(result.exitCode)): Nenhum processo retornado. stderr: '\(errStr)'")
             return []
         }
         
+        logTelemetry("lsof raw output:\n\(output)")
         let processes = parseLsofOutput(output)
-        logTelemetry("lsof concluído em \(String(format: "%.3fs", result.duration)): \(processes.count) processo(s) ativo(s) localizado(s).")
+        logTelemetry("lsof concluído em \(String(format: "%.3fs", result.duration)): \(processes.count) processo(s) filtrado(s) localizado(s).")
         for proc in processes {
-            logTelemetry("  ↳ PID \(proc.pid) [\(proc.name)]: \(proc.openFiles.count) arquivo(s) aberto(s)")
+            logTelemetry("  ↳ PID \(proc.pid) [\(proc.name)]: \(proc.openFiles.count) arquivo(s) aberto(s) -> \(proc.openFiles)")
         }
         
         return processes
@@ -320,6 +312,9 @@ public actor TelemetryService {
         // 1. Tenta primariamente via CLI `diskutil eject` (comunicação direta com diskarbitrationd)
         logTelemetry("Executando diskutil eject \(volumePath)...")
         let diskutilResult = await runSubprocess(executable: "/usr/sbin/diskutil", arguments: ["eject", volumePath], timeoutSeconds: 5.0)
+        let ejectStdout = String(data: diskutilResult.stdout, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let ejectStderr = String(data: diskutilResult.stderr, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        logTelemetry("diskutil eject res (code \(diskutilResult.exitCode)): stdout='\(ejectStdout)', stderr='\(ejectStderr)'")
         if diskutilResult.exitCode == 0 {
             logTelemetry("Volume \(volumePath) ejetado via diskutil eject com sucesso!")
             return
@@ -328,11 +323,13 @@ public actor TelemetryService {
         // 2. Secundariamente tenta via `diskutil unmount`
         logTelemetry("diskutil eject retornou \(diskutilResult.exitCode). Tentando diskutil unmount \(volumePath)...")
         let unmountResult = await runSubprocess(executable: "/usr/sbin/diskutil", arguments: ["unmount", volumePath], timeoutSeconds: 5.0)
+        let unmountStdout = String(data: unmountResult.stdout, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let unmountStderr = String(data: unmountResult.stderr, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        logTelemetry("diskutil unmount res (code \(unmountResult.exitCode)): stdout='\(unmountStdout)', stderr='\(unmountStderr)'")
         if unmountResult.exitCode == 0 {
             logTelemetry("Volume \(volumePath) desmontado via diskutil unmount com sucesso!")
             return
         }
-        
         // 3. Terciariamente tenta via NSWorkspace Cocoa API
         let url = URL(fileURLWithPath: volumePath)
         let workspace = NSWorkspace.shared
