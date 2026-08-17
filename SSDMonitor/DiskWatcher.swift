@@ -250,7 +250,7 @@ public final class DiskWatcher: ObservableObject {
             } catch {
                 await MainActor.run {
                     self.isEjecting = false
-                    self.errorMessage = "Erro ao ejetar: \(error.localizedDescription)"
+                    self.errorMessage = error.localizedDescription
                     logWatcher("Erro ao ejetar volume: \(error.localizedDescription)", isError: true)
                     self.startTimer() // Reinicia o polling se a ejeção falhar
                     self.refreshAll()

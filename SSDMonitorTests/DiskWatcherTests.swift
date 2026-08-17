@@ -108,7 +108,7 @@ struct DiskWatcherTests {
         try await Task.sleep(nanoseconds: 150_000_000)
 
         #expect(watcher.isEjecting == false)
-        #expect(watcher.errorMessage?.contains("Erro ao ejetar") == true)
+        #expect(watcher.errorMessage != nil)
     }
 
     @Test func testDiskWatcher_KillProcessSuccess_SetsStatusMessage() async throws {

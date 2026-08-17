@@ -284,12 +284,38 @@ public actor TelemetryService {
         return false
     }
     
-    /// Ejeta o volume usando NSWorkspace
+    /// Ejeta o volume usando NSWorkspace com fallback para diskutil eject
     public func unmountVolume(at volumePath: String) async throws {
         logTelemetry("Iniciando ejeção segura de \(volumePath)...")
         let url = URL(fileURLWithPath: volumePath)
         let workspace = NSWorkspace.shared
-        try workspace.unmountAndEjectDevice(at: url)
-        logTelemetry("Volume \(volumePath) ejetado com sucesso!")
+        
+        do {
+            try workspace.unmountAndEjectDevice(at: url)
+            logTelemetry("Volume \(volumePath) ejetado via NSWorkspace com sucesso!")
+        } catch {
+            logTelemetry("NSWorkspace falhou ao ejetar \(volumePath) (\(error.localizedDescription)). Tentando via diskutil eject...", isError: true)
+            let result = await runSubprocess(executable: "/usr/sbin/diskutil", arguments: ["eject", volumePath], timeoutSeconds: 3.0)
+            if result.exitCode == 0 {
+                logTelemetry("Volume \(volumePath) ejetado via diskutil com sucesso!")
+            } else {
+                let errOutput = String(data: result.stderr, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+                let detail = (errOutput != nil && !errOutput!.isEmpty) ? errOutput! : error.localizedDescription
+                logTelemetry("Falha ao ejetar volume \(volumePath): \(detail)", isError: true)
+                
+                let friendlyMessage: String
+                if detail.contains("47") || detail.contains("busy") || (error as NSError).code == -47 {
+                    friendlyMessage = "O volume está em uso por outros aplicativos. Encerre os processos listados abaixo antes de ejetar."
+                } else {
+                    friendlyMessage = "Falha ao ejetar volume: \(detail)"
+                }
+                
+                throw NSError(
+                    domain: "SSDMonitor.TelemetryService",
+                    code: -47,
+                    userInfo: [NSLocalizedDescriptionKey: friendlyMessage]
+                )
+            }
+        }
     }
 }
