@@ -29,10 +29,10 @@ public final class DiskWatcher: ObservableObject {
     }
     
     @Published public var temperature: Int? = nil
+    @Published public var temperatureSensors: [Int]? = nil
     @Published public var smartPassed: Bool? = nil
     @Published public var modelName: String? = nil
     @Published public var rawSmartError: String? = nil
-    
     @Published public var storageInfo: StorageInfo? = nil
     @Published public var activeProcesses: [ActiveProcess] = []
     
@@ -131,6 +131,7 @@ public final class DiskWatcher: ObservableObject {
         guard exists else {
             logWatcher("Volume \(targetMountPoint) NÃO está montado.", isError: true)
             self.temperature = nil
+            self.temperatureSensors = nil
             self.smartPassed = nil
             self.modelName = nil
             self.rawSmartError = nil
@@ -180,6 +181,7 @@ public final class DiskWatcher: ObservableObject {
                 self.bsdIdentifier = detectedNode
                 self.storageInfo = storage
                 self.temperature = smart.temperature
+                self.temperatureSensors = smart.temperatureSensors
                 self.smartPassed = smart.smartPassed
                 self.modelName = smart.modelName
                 self.rawSmartError = smart.rawError

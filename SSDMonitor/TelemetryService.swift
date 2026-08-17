@@ -43,12 +43,14 @@ public struct SMARTData: Sendable {
     public let smartPassed: Bool?
     public let modelName: String?
     public let rawError: String?
+    public let temperatureSensors: [Int]?
 
-    public nonisolated init(temperature: Int?, smartPassed: Bool?, modelName: String?, rawError: String? = nil) {
+    public nonisolated init(temperature: Int?, smartPassed: Bool?, modelName: String?, rawError: String? = nil, temperatureSensors: [Int]? = nil) {
         self.temperature = temperature
         self.smartPassed = smartPassed
         self.modelName = modelName
         self.rawError = rawError
+        self.temperatureSensors = temperatureSensors
     }
 }
 
@@ -140,6 +142,7 @@ public actor TelemetryService {
         
         if let json = try? JSONSerialization.jsonObject(with: result.stdout) as? [String: Any] {
             var temp: Int? = nil
+            var sensors: [Int]? = nil
             
             // Parse de temperatura (NVMe / ATA)
             if let tempDict = json["temperature"] as? [String: Any],
@@ -148,6 +151,11 @@ public actor TelemetryService {
             } else if let nvmeLog = json["nvme_smart_health_information_log"] as? [String: Any],
                           let current = nvmeLog["temperature"] as? Int {
                 temp = current
+            }
+            
+            if let nvmeLog = json["nvme_smart_health_information_log"] as? [String: Any],
+               let sensorList = nvmeLog["temperature_sensors"] as? [Int] {
+                sensors = sensorList
             }
             
             // Parse de status SMART
@@ -165,7 +173,8 @@ public actor TelemetryService {
                 temperature: temp,
                 smartPassed: passed,
                 modelName: model,
-                rawError: nil
+                rawError: nil,
+                temperatureSensors: sensors
             )
         }
         

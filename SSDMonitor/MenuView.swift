@@ -169,6 +169,34 @@ public struct MenuView: View {
                     }
                 }
             }
+            if let sensors = watcher.temperatureSensors, sensors.count >= 2 {
+                Divider()
+                    .padding(.vertical, 2)
+                
+                HStack {
+                    HStack(spacing: 4) {
+                        Image(systemName: "cpu")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                        Text("Controladora: \(sensors[0])°C")
+                            .font(.caption2)
+                            .fontWeight(.medium)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    Spacer()
+                    
+                    HStack(spacing: 4) {
+                        Image(systemName: "memorychip")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                        Text("NAND Flash: \(sensors[1])°C")
+                            .font(.caption2)
+                            .fontWeight(.medium)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
             
             if let rawError = watcher.rawSmartError {
                 HStack(spacing: 6) {
