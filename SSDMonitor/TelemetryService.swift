@@ -67,66 +67,16 @@ public struct SMARTData: Sendable {
 public actor TelemetryService {
     public static let shared = TelemetryService()
     
-    private init() {}
+    private let commandRunner: CommandRunner
     
-    /// Executor genérico de subprocessos assíncrono com medição de tempo e logging
-    private func runSubprocess(executable: String, arguments: [String], timeoutSeconds: Double = 2.0) async -> (stdout: Data, stderr: Data, exitCode: Int32, duration: Double) {
-        let startTime = Date()
-        
-        let result: (stdout: Data, stderr: Data, exitCode: Int32) = await withCheckedContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
-                let process = Process()
-                process.executableURL = URL(fileURLWithPath: executable)
-                process.arguments = arguments
-                
-                let outPipe = Pipe()
-                let errPipe = Pipe()
-                process.standardOutput = outPipe
-                process.standardError = errPipe
-                
-                var outData = Data()
-                var errData = Data()
-                
-                let group = DispatchGroup()
-                
-                group.enter()
-                DispatchQueue.global().async {
-                    outData = outPipe.fileHandleForReading.readDataToEndOfFile()
-                    group.leave()
-                }
-                
-                group.enter()
-                DispatchQueue.global().async {
-                    errData = errPipe.fileHandleForReading.readDataToEndOfFile()
-                    group.leave()
-                }
-                
-                do {
-                    try process.run()
-                } catch {
-                    continuation.resume(returning: (Data(), error.localizedDescription.data(using: .utf8) ?? Data(), -1))
-                    return
-                }
-                
-                let timeoutItem = DispatchWorkItem {
-                    if process.isRunning {
-                        process.terminate()
-                    }
-                }
-                DispatchQueue.global().asyncAfter(deadline: .now() + timeoutSeconds, execute: timeoutItem)
-                
-                process.waitUntilExit()
-                timeoutItem.cancel()
-                group.wait()
-                
-                continuation.resume(returning: (outData, errData, process.terminationStatus))
-            }
-        }
-        
-        let duration = Date().timeIntervalSince(startTime)
-        return (result.stdout, result.stderr, result.exitCode, duration)
+    public init(commandRunner: CommandRunner = SystemCommandRunner()) {
+        self.commandRunner = commandRunner
     }
     
+    /// Executor genérico de subprocessos assíncrono delegando para a interface CommandRunner
+    private func runSubprocess(executable: String, arguments: [String], timeoutSeconds: Double = 2.0) async -> CommandExecutionResult {
+        return await commandRunner.run(executable: executable, arguments: arguments, timeoutSeconds: timeoutSeconds)
+    }
     /// Localiza o binário do smartctl nos caminhos padrão do macOS / Homebrew
     public func findSmartctlExecutable() -> String? {
         let possiblePaths = [
