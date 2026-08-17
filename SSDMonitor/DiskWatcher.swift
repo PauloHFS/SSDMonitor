@@ -26,9 +26,17 @@ public final class DiskWatcher: ObservableObject {
     
     @Published public var isMounted: Bool = false
     @Published public var isInserted: Bool = true
-    @Published public var targetVolumeName: String = "PauloSSDExterno"
-    @Published public var targetMountPoint: String = "/Volumes/PauloSSDExterno"
-    @Published public var bsdIdentifier: String = "/dev/disk8"
+    @Published public var targetVolume: TargetVolume = TargetVolume()
+    
+    public var targetVolumeName: String { targetVolume.name }
+    public var targetMountPoint: String {
+        get { targetVolume.mountPoint }
+        set { targetVolume = TargetVolume(name: targetVolume.name, mountPoint: newValue, bsdNode: targetVolume.bsdNode) }
+    }
+    public var bsdIdentifier: String {
+        get { targetVolume.bsdNode }
+        set { targetVolume = targetVolume.updatingBSDNode(newValue) }
+    }
     
     @Published public var temperature: Int? = nil
     @Published public var smartPassed: Bool? = nil
@@ -127,7 +135,7 @@ public final class DiskWatcher: ObservableObject {
     // MARK: - Core Refresh Pipeline
     
     public func refreshAll() {
-        let exists = FileManager.default.fileExists(atPath: targetMountPoint)
+        let exists = targetVolume.isMounted
         self.isMounted = exists
         
         guard exists else {
@@ -161,14 +169,20 @@ public final class DiskWatcher: ObservableObject {
             
             let telemetry = self.telemetry
             
-            // 1. Identificador Físico Alvo (Detectado dinamicamente via diskutil info)
-            let detectedNode = await telemetry.detectBSDNode(forVolumePath: targetMountPoint)
+            let initialTarget = await MainActor.run { [weak self] in self?.targetVolume ?? TargetVolume() }
+            let detectedNode = await telemetry.detectBSDNode(for: initialTarget)
+            let currentTarget = await MainActor.run { [weak self] () -> TargetVolume in
+                guard let self = self else { return initialTarget }
+                let updated = self.targetVolume.updatingBSDNode(detectedNode)
+                self.targetVolume = updated
+                return updated
+            }
             
             // 2. Telemetria de Armazenamento (Instantâneo)
-            let storage = telemetry.fetchStorageInfo(volumePath: targetMountPoint)
+            let storage = telemetry.fetchStorageInfo(for: currentTarget)
             
             // 3. SMART & Temperatura (Instantâneo < 0.05s)
-            let smart = await telemetry.fetchSMARTData(deviceNode: detectedNode)
+            let smart = await telemetry.fetchSMARTData(for: currentTarget)
             
             // Atualiza IMEDIATAMENTE a temperatura na UI
             await MainActor.run { [weak self] in
@@ -184,7 +198,7 @@ public final class DiskWatcher: ObservableObject {
             }
             
             // 4. Processos Ativos via lsof (Com timeout curto)
-            let procs = await telemetry.fetchActiveProcesses(volumePath: targetMountPoint)
+            let procs = await telemetry.fetchActiveProcesses(for: currentTarget)
             
             await MainActor.run { [weak self] in
                 guard let self = self else { return }
@@ -225,7 +239,7 @@ public final class DiskWatcher: ObservableObject {
         
         Task {
             do {
-                try await self.telemetry.unmountVolume(at: targetMountPoint)
+                try await self.telemetry.unmountVolume(at: self.targetVolume)
                 await MainActor.run {
                     self.isMounted = false
                     self.isEjecting = false

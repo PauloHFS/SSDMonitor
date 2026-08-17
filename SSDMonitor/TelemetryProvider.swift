@@ -7,14 +7,45 @@
 
 import Foundation
 
-/// Interface de abstração do serviço de telemetria e gerenciamento de processos/ejeção de disco.
 public protocol TelemetryProvider: Sendable {
+    func detectBSDNode(for target: TargetVolume) async -> String
     func detectBSDNode(forVolumePath volumePath: String) async -> String
+    
+    func fetchStorageInfo(for target: TargetVolume) -> StorageInfo?
     func fetchStorageInfo(volumePath: String) -> StorageInfo?
+    
+    func fetchSMARTData(for target: TargetVolume) async -> SMARTData
     func fetchSMARTData(deviceNode: String) async -> SMARTData
+    
+    func fetchActiveProcesses(for target: TargetVolume) async -> [ActiveProcess]
     func fetchActiveProcesses(volumePath: String) async -> [ActiveProcess]
+    
     func killProcess(pid: pid_t) async -> Bool
+    
+    func unmountVolume(at target: TargetVolume) async throws
     func unmountVolume(at volumePath: String) async throws
+}
+
+public extension TelemetryProvider {
+    func detectBSDNode(for target: TargetVolume) async -> String {
+        await detectBSDNode(forVolumePath: target.mountPoint)
+    }
+    
+    func fetchStorageInfo(for target: TargetVolume) -> StorageInfo? {
+        fetchStorageInfo(volumePath: target.mountPoint)
+    }
+    
+    func fetchSMARTData(for target: TargetVolume) async -> SMARTData {
+        await fetchSMARTData(deviceNode: target.bsdNode)
+    }
+    
+    func fetchActiveProcesses(for target: TargetVolume) async -> [ActiveProcess] {
+        await fetchActiveProcesses(volumePath: target.mountPoint)
+    }
+    
+    func unmountVolume(at target: TargetVolume) async throws {
+        try await unmountVolume(at: target.mountPoint)
+    }
 }
 
 extension TelemetryService: TelemetryProvider {}
