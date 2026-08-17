@@ -226,20 +226,21 @@ public final class DiskWatcher: ObservableObject {
         }
     }
     
-    public func ejectVolume() {
+    public func ejectVolume(force: Bool = false) {
         guard isMounted else { return }
         stopTimer() // Interrompe o polling de background durante a ejeção
         isEjecting = true
         errorMessage = nil
-        statusMessage = "Tentando ejetar \(targetVolumeName)..."
-        logWatcher("Comando recebido: Ejetar volume \(targetVolumeName)...")
+        let actionMsg = force ? "Forçando ejeção de" : "Tentando ejetar"
+        statusMessage = "\(actionMsg) \(targetVolumeName)..."
+        logWatcher("Comando recebido: Ejetar volume \(targetVolumeName) (force: \(force))...")
         
         // Garante que o diretório de trabalho do processo esteja em '/'
         FileManager.default.changeCurrentDirectoryPath("/")
         
         Task {
             do {
-                try await self.telemetry.unmountVolume(at: self.targetVolume)
+                try await self.telemetry.unmountVolume(at: self.targetVolume, force: force)
                 await MainActor.run {
                     self.isMounted = false
                     self.isEjecting = false

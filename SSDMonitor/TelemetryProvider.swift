@@ -22,8 +22,8 @@ public protocol TelemetryProvider: Sendable {
     
     func killProcess(pid: pid_t) async -> Bool
     
-    func unmountVolume(at target: TargetVolume) async throws
-    func unmountVolume(at volumePath: String) async throws
+    func unmountVolume(at target: TargetVolume, force: Bool) async throws
+    func unmountVolume(at volumePath: String, force: Bool) async throws
 }
 
 public extension TelemetryProvider {
@@ -43,8 +43,11 @@ public extension TelemetryProvider {
         await fetchActiveProcesses(volumePath: target.mountPoint)
     }
     
-    func unmountVolume(at target: TargetVolume) async throws {
-        try await unmountVolume(at: target.mountPoint)
+    func unmountVolume(at target: TargetVolume, force: Bool = false) async throws {
+        try await unmountVolume(at: target.mountPoint, force: force)
+    }
+    func unmountVolume(at volumePath: String) async throws {
+        try await unmountVolume(at: volumePath, force: false)
     }
 }
 
@@ -87,7 +90,7 @@ public final class MockTelemetryProvider: TelemetryProvider, @unchecked Sendable
         return killResultToReturn
     }
 
-    public func unmountVolume(at volumePath: String) async throws {
+    public func unmountVolume(at volumePath: String, force: Bool = false) async throws {
         onUnmount?(volumePath)
         if unmountShouldFail {
             throw unmountErrorToThrow

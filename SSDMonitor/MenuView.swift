@@ -372,11 +372,11 @@ public struct MenuView: View {
                     .lineLimit(2)
             }
             
-            HStack(spacing: 10) {
+            HStack(spacing: 8) {
                 Button(action: {
-                    watcher.ejectVolume()
+                    watcher.ejectVolume(force: false)
                 }) {
-                    HStack {
+                    HStack(spacing: 4) {
                         if watcher.isEjecting {
                             ProgressView()
                                 .controlSize(.small)
@@ -392,6 +392,24 @@ public struct MenuView: View {
                 .buttonStyle(.borderedProminent)
                 .tint(.orange)
                 .disabled(!watcher.isMounted || watcher.isEjecting)
+                
+                if watcher.errorMessage != nil {
+                    Button(action: {
+                        watcher.ejectVolume(force: true)
+                    }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "bolt.horizontal.fill")
+                            Text("Forçar")
+                                .fontWeight(.medium)
+                        }
+                        .padding(.vertical, 6)
+                        .padding(.horizontal, 8)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.red)
+                    .disabled(!watcher.isMounted || watcher.isEjecting)
+                    .help("Força o desmonte do volume ignorando arquivos travados pelo sistema")
+                }
                 
                 Button(action: {
                     NSApplication.shared.terminate(nil)

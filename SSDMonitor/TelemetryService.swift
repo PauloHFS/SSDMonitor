@@ -220,6 +220,7 @@ public actor TelemetryService {
             case "p":
                 if let pid = pid_t(value) {
                     currentPID = pid
+                    currentName = "Desconhecido"
                     if processDict[pid] == nil {
                         processDict[pid] = (name: currentName, openFiles: [])
                     }
@@ -284,9 +285,27 @@ public actor TelemetryService {
         return false
     }
     
-    /// Ejeta o volume usando NSWorkspace com fallback para diskutil eject
-    public func unmountVolume(at volumePath: String) async throws {
-        logTelemetry("Iniciando ejeção segura de \(volumePath)...")
+    /// Ejeta o volume usando NSWorkspace com opção de ejeção forçada via diskutil
+    public func unmountVolume(at volumePath: String, force: Bool = false) async throws {
+        logTelemetry("Iniciando ejeção (forçada: \(force)) de \(volumePath)...")
+        
+        if force {
+            let result = await runSubprocess(executable: "/usr/sbin/diskutil", arguments: ["eject", "force", volumePath], timeoutSeconds: 5.0)
+            if result.exitCode == 0 {
+                logTelemetry("Volume \(volumePath) ejetado forçadamente via diskutil com sucesso!")
+                return
+            } else {
+                let errOutput = String(data: result.stderr, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+                let detail = (errOutput != nil && !errOutput!.isEmpty) ? errOutput! : "Erro ao forçar ejeção."
+                logTelemetry("Ejeção forçada falhou (\(result.exitCode)): \(detail)", isError: true)
+                throw NSError(
+                    domain: "SSDMonitor.TelemetryService",
+                    code: Int(result.exitCode),
+                    userInfo: [NSLocalizedDescriptionKey: "Falha ao ejetar forçadamente: \(detail)"]
+                )
+            }
+        }
+        
         let url = URL(fileURLWithPath: volumePath)
         let workspace = NSWorkspace.shared
         
@@ -305,7 +324,7 @@ public actor TelemetryService {
                 
                 let friendlyMessage: String
                 if detail.contains("47") || detail.contains("busy") || (error as NSError).code == -47 {
-                    friendlyMessage = "O volume está em uso por outros aplicativos. Encerre os processos listados abaixo antes de ejetar."
+                    friendlyMessage = "O volume está em uso por outros aplicativos. Encerre os processos ou use a Ejeção Forçada."
                 } else {
                     friendlyMessage = "Falha ao ejetar volume: \(detail)"
                 }
