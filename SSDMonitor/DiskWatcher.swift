@@ -10,6 +10,152 @@ import AppKit
 import Combine
 
 
+// MARK: - Domain Models: Thermal Telemetry & History
+
+public enum ThermalLevel: String, Sendable, Comparable, CaseIterable {
+    case normal
+    case warm
+    case throttling
+    case critical
+
+    private var order: Int {
+        switch self {
+        case .normal: return 0
+        case .warm: return 1
+        case .throttling: return 2
+        case .critical: return 3
+        }
+    }
+
+    public static func < (lhs: ThermalLevel, rhs: ThermalLevel) -> Bool {
+        lhs.order < rhs.order
+    }
+
+    public var title: String {
+        switch self {
+        case .normal: return "Temperatura Normal"
+        case .warm: return "Temperatura Elevada"
+        case .throttling: return "Thermal Throttling"
+        case .critical: return "Superaquecimento!"
+        }
+    }
+
+    public var shortBadgeTitle: String {
+        switch self {
+        case .normal: return "Saudável"
+        case .warm: return "Aquecido"
+        case .throttling: return "Throttling"
+        case .critical: return "Perigo"
+        }
+    }
+}
+
+public struct ThermalStatus: Sendable, Equatable {
+    public let temperature: Int?
+    public let controllerTemp: Int?
+    public let nandTemp: Int?
+    public let level: ThermalLevel
+    public let isThrottling: Bool
+    public let statusText: String
+    public let subtitleText: String
+
+    public init(
+        temperature: Int?,
+        controllerTemp: Int? = nil,
+        nandTemp: Int? = nil,
+        level: ThermalLevel = .normal,
+        isThrottling: Bool = false,
+        statusText: String = "N/A",
+        subtitleText: String = ""
+    ) {
+        self.temperature = temperature
+        self.controllerTemp = controllerTemp
+        self.nandTemp = nandTemp
+        self.level = level
+        self.isThrottling = isThrottling
+        self.statusText = statusText
+        self.subtitleText = subtitleText
+    }
+
+    public init(temperature: Int?, sensors: [Int]?) {
+        self = Self.evaluate(temperature: temperature, sensors: sensors)
+    }
+
+    public static func evaluate(temperature: Int?, sensors: [Int]?) -> ThermalStatus {
+        guard let temp = temperature else {
+            return ThermalStatus(
+                temperature: nil,
+                controllerTemp: nil,
+                nandTemp: nil,
+                level: .normal,
+                isThrottling: false,
+                statusText: "Temperatura N/A",
+                subtitleText: "Aguardando leitura de telemetria"
+            )
+        }
+
+        let ctrlTemp = sensors?.first
+        let nandTemp = (sensors?.count ?? 0) >= 2 ? sensors?[1] : nil
+        let effectiveTemp = max(temp, ctrlTemp ?? temp)
+
+        let isThrottling = effectiveTemp >= 70
+        let level: ThermalLevel
+        let statusText: String
+        let subtitleText: String
+
+        switch effectiveTemp {
+        case ..<55:
+            level = .normal
+            statusText = "Temperatura Normal"
+            subtitleText = "Operando na faixa de temperatura ideal (< 55 °C)"
+        case 55..<70:
+            level = .warm
+            statusText = "Temperatura Elevada"
+            subtitleText = "Dissipação sob carga ativa em case passivo (55 °C – 69 °C)"
+        case 70..<75:
+            level = .throttling
+            statusText = "Thermal Throttling Ativo"
+            subtitleText = "Controladora atingiu gatilho térmico (70 °C – 74 °C). Desempenho reduzido."
+        default:
+            level = .critical
+            statusText = "Superaquecimento Severo!"
+            subtitleText = "Temperatura crítica (≥ 75 °C). Risco de desligamento térmico (~85 °C)."
+        }
+
+        return ThermalStatus(
+            temperature: temp,
+            controllerTemp: ctrlTemp,
+            nandTemp: nandTemp,
+            level: level,
+            isThrottling: isThrottling,
+            statusText: statusText,
+            subtitleText: subtitleText
+        )
+    }
+}
+
+public struct TemperatureReading: Identifiable, Sendable, Equatable {
+    public let id: UUID
+    public let timestamp: Date
+    public let temperature: Int
+    public let controllerTemp: Int?
+    public let nandTemp: Int?
+
+    public init(
+        id: UUID = UUID(),
+        timestamp: Date = Date(),
+        temperature: Int,
+        controllerTemp: Int? = nil,
+        nandTemp: Int? = nil
+    ) {
+        self.id = id
+        self.timestamp = timestamp
+        self.temperature = temperature
+        self.controllerTemp = controllerTemp
+        self.nandTemp = nandTemp
+    }
+}
+
 @MainActor
 public final class DiskWatcher: ObservableObject {
     // MARK: - Published Properties
@@ -30,12 +176,21 @@ public final class DiskWatcher: ObservableObject {
     
     @Published public var temperature: Int? = nil
     @Published public var temperatureSensors: [Int]? = nil
+    @Published public var temperatureHistory: [TemperatureReading] = []
     @Published public var smartPassed: Bool? = nil
     @Published public var modelName: String? = nil
     @Published public var rawSmartError: String? = nil
     @Published public var storageInfo: StorageInfo? = nil
     @Published public var activeProcesses: [ActiveProcess] = []
     @Published public var availableVolumes: [TargetVolume] = []
+    
+    public var thermalStatus: ThermalStatus {
+        ThermalStatus.evaluate(temperature: temperature, sensors: temperatureSensors)
+    }
+    
+    public var isThrottling: Bool {
+        thermalStatus.isThrottling
+    }
     
     @Published public var isRefreshing: Bool = false
     @Published public var lastUpdated: Date? = nil
@@ -55,7 +210,7 @@ public final class DiskWatcher: ObservableObject {
 
     public init(
         telemetry: TelemetryProvider = TelemetryService.shared,
-        volumeLister: @escaping @Sendable () -> [TargetVolume] = { TargetVolume.listMountedExternalVolumes() }
+        volumeLister: @escaping @Sendable () -> [TargetVolume] = { MainActor.assumeIsolated { TargetVolume.listMountedExternalVolumes() } }
     ) {
         self.telemetry = telemetry
         self.volumeLister = volumeLister
@@ -147,6 +302,7 @@ public final class DiskWatcher: ObservableObject {
         logWatcher("Volume selecionado: \(volume.name) (\(volume.mountPoint))")
         self.targetVolume = volume
         UserDefaults.standard.set(volume.name, forKey: savedVolumeKey)
+        self.temperatureHistory = []
         self.statusMessage = nil
         self.errorMessage = nil
         refreshAll()
@@ -163,6 +319,7 @@ public final class DiskWatcher: ObservableObject {
             logWatcher("Volume \(targetMountPoint) NÃO está montado.", isError: true)
             self.temperature = nil
             self.temperatureSensors = nil
+            self.temperatureHistory = []
             self.smartPassed = nil
             self.modelName = nil
             self.rawSmartError = nil
@@ -213,13 +370,24 @@ public final class DiskWatcher: ObservableObject {
                 self.storageInfo = storage
                 self.temperature = smart.temperature
                 self.temperatureSensors = smart.temperatureSensors
+                if let temp = smart.temperature {
+                    let reading = TemperatureReading(
+                        timestamp: Date(),
+                        temperature: temp,
+                        controllerTemp: smart.temperatureSensors?.first,
+                        nandTemp: (smart.temperatureSensors?.count ?? 0) >= 2 ? smart.temperatureSensors?[1] : nil
+                    )
+                    self.temperatureHistory.append(reading)
+                    if self.temperatureHistory.count > 60 {
+                        self.temperatureHistory.removeFirst(self.temperatureHistory.count - 60)
+                    }
+                }
                 self.smartPassed = smart.smartPassed
                 self.modelName = smart.modelName
                 self.rawSmartError = smart.rawError
                 self.lastUpdated = Date()
                 logWatcher("UI atualizada: Temp = \(smart.temperature?.description ?? "N/A")°C | Node = \(detectedNode)")
             }
-            
             // 4. Processos Ativos via lsof (Com timeout curto)
             let procs = await telemetry.fetchActiveProcesses(for: currentTarget)
             

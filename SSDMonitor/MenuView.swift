@@ -158,7 +158,7 @@ public struct MenuView: View {
                         HStack(alignment: .firstTextBaseline, spacing: 2) {
                             Text("\(temp)")
                                 .font(.system(size: 32, weight: .bold, design: .rounded))
-                                .foregroundColor(temperatureColor(temp))
+                                .foregroundColor(thermalColor(watcher.thermalStatus))
                             Text("°C")
                                 .font(.title3)
                                 .fontWeight(.medium)
@@ -188,13 +188,48 @@ public struct MenuView: View {
                         )
                     }
                     
-                    if let temp = watcher.temperature {
-                        Text(temperatureStatusText(temp))
-                            .font(.caption2)
-                            .foregroundColor(temperatureColor(temp))
+                    if watcher.temperature != nil {
+                        let status = watcher.thermalStatus
+                        StatusBadge(
+                            title: status.level.shortBadgeTitle,
+                            icon: thermalBadgeIcon(status),
+                            color: thermalColor(status)
+                        )
                     }
                 }
             }
+            
+            if watcher.isThrottling {
+                HStack(spacing: 8) {
+                    Image(systemName: "flame.fill")
+                        .font(.title3)
+                        .foregroundColor(.red)
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack {
+                            Text("Thermal Throttling Detectado")
+                                .font(.caption)
+                                .fontWeight(.bold)
+                                .foregroundColor(.red)
+                            Spacer()
+                            Text("Gatilho: ≥ 70°C")
+                                .font(.caption2)
+                                .fontWeight(.medium)
+                                .foregroundColor(.red)
+                        }
+                        Text(watcher.thermalStatus.subtitleText)
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .padding(8)
+                .background(Color.red.opacity(0.12))
+                .cornerRadius(8)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(Color.red.opacity(0.3), lineWidth: 1)
+                )
+            }
+            
             if let sensors = watcher.temperatureSensors, sensors.count >= 2 {
                 Divider()
                     .padding(.vertical, 2)
@@ -203,11 +238,11 @@ public struct MenuView: View {
                     HStack(spacing: 4) {
                         Image(systemName: "cpu")
                             .font(.caption2)
-                            .foregroundColor(.secondary)
+                            .foregroundColor(sensors[0] >= 70 ? .red : .secondary)
                         Text("Controladora: \(sensors[0])°C")
                             .font(.caption2)
-                            .fontWeight(.medium)
-                            .foregroundColor(.secondary)
+                            .fontWeight(sensors[0] >= 70 ? .bold : .medium)
+                            .foregroundColor(sensors[0] >= 70 ? .red : .secondary)
                     }
                     
                     Spacer()
@@ -215,11 +250,11 @@ public struct MenuView: View {
                     HStack(spacing: 4) {
                         Image(systemName: "memorychip")
                             .font(.caption2)
-                            .foregroundColor(.secondary)
+                            .foregroundColor(sensors[1] >= 70 ? .red : .secondary)
                         Text("NAND Flash: \(sensors[1])°C")
                             .font(.caption2)
-                            .fontWeight(.medium)
-                            .foregroundColor(.secondary)
+                            .fontWeight(sensors[1] >= 70 ? .bold : .medium)
+                            .foregroundColor(sensors[1] >= 70 ? .red : .secondary)
                     }
                 }
             }
@@ -237,11 +272,17 @@ public struct MenuView: View {
                 .background(Color.orange.opacity(0.1))
                 .cornerRadius(6)
             }
+            
+            if watcher.isMounted {
+                TemperatureGraphView(
+                    history: watcher.temperatureHistory,
+                    currentSensors: watcher.temperatureSensors
+                )
+            }
         }
         .padding(12)
         .background(CardBackground())
     }
-    
     // MARK: - Card 2: Armazenamento
     
     private var storageCard: some View {
@@ -585,25 +626,29 @@ public struct MenuView: View {
     
     // MARK: - Helper Functions
     
-    private func temperatureColor(_ temp: Int) -> Color {
-        switch temp {
-        case ..<55:
+    private func thermalColor(_ status: ThermalStatus) -> Color {
+        switch status.level {
+        case .normal:
             return .green
-        case 55..<68:
+        case .warm:
             return .orange
-        default:
+        case .throttling:
+            return .orange
+        case .critical:
             return .red
         }
     }
     
-    private func temperatureStatusText(_ temp: Int) -> String {
-        switch temp {
-        case ..<55:
-            return "Temperatura Normal"
-        case 55..<68:
-            return "Temperatura Elevada"
-        default:
-            return "Temperatura Crítica!"
+    private func thermalBadgeIcon(_ status: ThermalStatus) -> String {
+        switch status.level {
+        case .normal:
+            return "thermometer.medium"
+        case .warm:
+            return "thermometer.sun.fill"
+        case .throttling:
+            return "flame.fill"
+        case .critical:
+            return "exclamationmark.triangle.fill"
         }
     }
 }
@@ -635,5 +680,177 @@ struct CardBackground: View {
         RoundedRectangle(cornerRadius: 10, style: .continuous)
             .fill(Color(NSColor.controlBackgroundColor))
             .shadow(color: Color.black.opacity(0.04), radius: 2, x: 0, y: 1)
+    }
+}
+
+struct TemperatureGraphView: View {
+    let history: [TemperatureReading]
+    let currentSensors: [Int]?
+
+    private var minTemp: Int {
+        history.map(\.temperature).min() ?? 0
+    }
+
+    private var maxTemp: Int {
+        history.map(\.temperature).max() ?? 0
+    }
+
+    private var avgTemp: Int {
+        guard !history.isEmpty else { return 0 }
+        let total = history.map(\.temperature).reduce(0, +)
+        return Int(round(Double(total) / Double(history.count)))
+    }
+
+    private var graphColor: Color {
+        if maxTemp >= 75 {
+            return .red
+        } else if maxTemp >= 70 {
+            return .orange
+        } else if maxTemp >= 55 {
+            return .orange
+        } else {
+            return .green
+        }
+    }
+
+    private func yPos(for temp: Double, in height: CGFloat, yMin: Double, yRange: Double) -> CGFloat {
+        let normalized = (temp - yMin) / yRange
+        return height * CGFloat(1.0 - normalized)
+    }
+
+    private func xPos(for index: Int, total: Int, in width: CGFloat) -> CGFloat {
+        guard total > 1 else { return width / 2 }
+        return width * (CGFloat(index) / CGFloat(total - 1))
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Label("Histórico Térmico", systemImage: "waveform.path.ecg")
+                    .font(.caption2)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.secondary)
+
+                Spacer()
+
+                if !history.isEmpty {
+                    HStack(spacing: 8) {
+                        metricText(label: "Mín", value: "\(minTemp)°C", color: .green)
+                        metricText(label: "Méd", value: "\(avgTemp)°C", color: .blue)
+                        metricText(label: "Máx", value: "\(maxTemp)°C", color: maxTemp >= 70 ? .red : .orange)
+                    }
+                }
+            }
+
+            if history.count >= 2 {
+                GeometryReader { geo in
+                    let width = geo.size.width
+                    let height = geo.size.height
+
+                    let yMin = Double(min(minTemp - 3, 30))
+                    let yMax = Double(max(maxTemp + 5, 80))
+                    let yRange = max(1.0, yMax - yMin)
+                    let y70 = yPos(for: 70, in: height, yMin: yMin, yRange: yRange)
+                    let y55 = yPos(for: 55, in: height, yMin: yMin, yRange: yRange)
+
+                    ZStack(alignment: .topLeading) {
+                        if y70 >= 0 && y70 <= height {
+                            Path { path in
+                                path.move(to: CGPoint(x: 0, y: y70))
+                                path.addLine(to: CGPoint(x: width, y: y70))
+                            }
+                            .stroke(Color.red.opacity(0.5), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+
+                            Text("70°C Throttling")
+                                .font(.system(size: 8, weight: .bold))
+                                .foregroundColor(.red)
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 1)
+                                .background(Color.red.opacity(0.12))
+                                .cornerRadius(3)
+                                .position(x: width - 36, y: max(8, y70 - 7))
+                        }
+
+                        if y55 >= 0 && y55 <= height && abs(y55 - y70) > 14 {
+                            Path { path in
+                                path.move(to: CGPoint(x: 0, y: y55))
+                                path.addLine(to: CGPoint(x: width, y: y55))
+                            }
+                            .stroke(Color.orange.opacity(0.3), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                        }
+
+                        Path { path in
+                            path.move(to: CGPoint(x: 0, y: height))
+                            for (idx, item) in history.enumerated() {
+                                let x = xPos(for: idx, total: history.count, in: width)
+                                let y = yPos(for: Double(item.temperature), in: height, yMin: yMin, yRange: yRange)
+                                path.addLine(to: CGPoint(x: x, y: y))
+                            }
+                            path.addLine(to: CGPoint(x: width, y: height))
+                            path.closeSubpath()
+                        }
+                        .fill(
+                            LinearGradient(
+                                colors: [graphColor.opacity(0.22), graphColor.opacity(0.01)],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+
+                        Path { path in
+                            for (idx, item) in history.enumerated() {
+                                let x = xPos(for: idx, total: history.count, in: width)
+                                let y = yPos(for: Double(item.temperature), in: height, yMin: yMin, yRange: yRange)
+                                let pt = CGPoint(x: x, y: y)
+                                if idx == 0 {
+                                    path.move(to: pt)
+                                } else {
+                                    path.addLine(to: pt)
+                                }
+                            }
+                        }
+                        .stroke(graphColor, lineWidth: 2)
+
+                        if let lastIdx = history.indices.last {
+                            let x = xPos(for: lastIdx, total: history.count, in: width)
+                            let y = yPos(for: Double(history[lastIdx].temperature), in: height, yMin: yMin, yRange: yRange)
+                            let pt = CGPoint(x: x, y: y)
+
+                            Circle()
+                                .fill(graphColor)
+                                .frame(width: 6, height: 6)
+                                .position(pt)
+                        }
+                    }
+                }
+                .frame(height: 60)
+            } else {
+                HStack {
+                    Spacer()
+                    Text("Coletando histórico de temperatura...")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                        .padding(.vertical, 6)
+                    Spacer()
+                }
+                .frame(height: 40)
+                .background(Color.secondary.opacity(0.05))
+                .cornerRadius(6)
+            }
+        }
+        .padding(8)
+        .background(Color.secondary.opacity(0.05))
+        .cornerRadius(8)
+    }
+
+    private func metricText(label: String, value: String, color: Color) -> some View {
+        HStack(spacing: 2) {
+            Text("\(label):")
+                .font(.system(size: 9))
+                .foregroundColor(.secondary)
+            Text(value)
+                .font(.system(size: 9, weight: .bold))
+                .foregroundColor(color)
+        }
     }
 }

@@ -140,4 +140,48 @@ struct DiskWatcherTests {
         #expect(watcher.targetVolume == volB)
         #expect(watcher.targetMountPoint == "/Volumes/VolumeB")
     }
+
+    @Test func testThermalStatus_LevelsAndThrottling() {
+        let statusNormal = ThermalStatus(temperature: 45, sensors: nil)
+        #expect(statusNormal.level == .normal)
+        #expect(statusNormal.isThrottling == false)
+        #expect(statusNormal.statusText == "Temperatura Normal")
+
+        let statusWarm = ThermalStatus(temperature: 62, sensors: nil)
+        #expect(statusWarm.level == .warm)
+        #expect(statusWarm.isThrottling == false)
+        #expect(statusWarm.statusText == "Temperatura Elevada")
+
+        let statusThrottling = ThermalStatus(temperature: 70, sensors: [70, 72])
+        #expect(statusThrottling.level == .throttling)
+        #expect(statusThrottling.isThrottling == true)
+        #expect(statusThrottling.statusText == "Thermal Throttling Ativo")
+
+        let statusCritical = ThermalStatus(temperature: 78, sensors: [78])
+        #expect(statusCritical.level == .critical)
+        #expect(statusCritical.isThrottling == true)
+        #expect(statusCritical.statusText == "Superaquecimento Severo!")
+    }
+    @Test func testTemperatureHistory_AccumulatesAndCapsAt60Readings() async throws {
+        let tempVolume = FileManager.default.temporaryDirectory.appendingPathComponent("MountedSSD_History_\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tempVolume, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempVolume) }
+
+        let mockTelemetry = MockTelemetryProvider()
+        mockTelemetry.bsdNodeToReturn = "/dev/disk9"
+        mockTelemetry.smartDataToReturn = SMARTData(temperature: 40, smartPassed: true, modelName: "Mock NVMe", rawError: nil)
+
+        let watcher = DiskWatcher(telemetry: mockTelemetry, volumeLister: { [] })
+        watcher.stopTimer()
+        watcher.targetMountPoint = tempVolume.path
+
+        for i in 1...65 {
+            mockTelemetry.smartDataToReturn = SMARTData(temperature: 40 + (i % 30), smartPassed: true, modelName: "Mock NVMe", rawError: nil)
+            watcher.refreshAll()
+            try await Task.sleep(nanoseconds: 5_000_000)
+        }
+
+        #expect(watcher.temperatureHistory.count == 60)
+        #expect(watcher.temperatureHistory.last?.temperature == watcher.temperature)
+    }
 }
