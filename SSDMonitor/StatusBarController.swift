@@ -53,7 +53,34 @@ public final class StatusBarController: NSObject {
             self.updateStatusButton(temperature: self.watcher.temperature, isMounted: self.watcher.isMounted)
         }
         .store(in: &cancellables)
-            
+
+        // 5. Manter o popover aberto durante a ejeção e fechar automaticamente apenas em caso de sucesso
+        watcher.$isEjecting
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] isEjecting in
+                guard let self = self else { return }
+                if isEjecting {
+                    self.popover.behavior = .semitransient
+                } else {
+                    self.popover.behavior = .transient
+                }
+            }
+            .store(in: &cancellables)
+
+        watcher.$isMounted
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] isMounted in
+                guard let self = self else { return }
+                if !isMounted && self.popover.isShown && self.watcher.errorMessage == nil {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
+                        guard let self = self, !self.watcher.isMounted, self.watcher.errorMessage == nil else { return }
+                        self.popover.performClose(nil)
+                    }
+                }
+            }
+            .store(in: &cancellables)
+
         updateStatusButton(temperature: watcher.temperature, isMounted: watcher.isMounted)
     }
 

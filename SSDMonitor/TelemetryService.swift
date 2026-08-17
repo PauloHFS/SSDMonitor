@@ -290,57 +290,73 @@ public actor TelemetryService {
         logTelemetry("Falha ao encerrar processo PID \(pid) com SIGKILL.", isError: true)
         return false
     }
-    
-    /// Ejeta o volume usando NSWorkspace com opção de ejeção forçada via diskutil
+    /// Ejeta o volume usando diskutil eject (com fallback para unmount e NSWorkspace)
     public func unmountVolume(at volumePath: String, force: Bool = false) async throws {
         logTelemetry("Iniciando ejeção (forçada: \(force)) de \(volumePath)...")
         
         if force {
+            logTelemetry("Executando diskutil eject force \(volumePath)...")
             let result = await runSubprocess(executable: "/usr/sbin/diskutil", arguments: ["eject", "force", volumePath], timeoutSeconds: 5.0)
             if result.exitCode == 0 {
                 logTelemetry("Volume \(volumePath) ejetado forçadamente via diskutil com sucesso!")
                 return
-            } else {
-                let errOutput = String(data: result.stderr, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
-                let detail = (errOutput != nil && !errOutput!.isEmpty) ? errOutput! : "Erro ao forçar ejeção."
-                logTelemetry("Ejeção forçada falhou (\(result.exitCode)): \(detail)", isError: true)
-                throw NSError(
-                    domain: "SSDMonitor.TelemetryService",
-                    code: Int(result.exitCode),
-                    userInfo: [NSLocalizedDescriptionKey: "Falha ao ejetar forçadamente: \(detail)"]
-                )
             }
+            let unmountForceResult = await runSubprocess(executable: "/usr/sbin/diskutil", arguments: ["unmount", "force", volumePath], timeoutSeconds: 5.0)
+            if unmountForceResult.exitCode == 0 {
+                logTelemetry("Volume \(volumePath) desmontado forçadamente via diskutil unmount force!")
+                return
+            }
+            
+            let errOutput = String(data: result.stderr, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let detail = (errOutput != nil && !errOutput!.isEmpty) ? errOutput! : "Falha ao forçar ejeção."
+            logTelemetry("Ejeção forçada falhou (\(result.exitCode)): \(detail)", isError: true)
+            throw NSError(
+                domain: "SSDMonitor.TelemetryService",
+                code: Int(result.exitCode),
+                userInfo: [NSLocalizedDescriptionKey: "Falha ao ejetar forçadamente: \(detail)"]
+            )
         }
         
+        // 1. Tenta primariamente via CLI `diskutil eject` (comunicação direta com diskarbitrationd)
+        logTelemetry("Executando diskutil eject \(volumePath)...")
+        let diskutilResult = await runSubprocess(executable: "/usr/sbin/diskutil", arguments: ["eject", volumePath], timeoutSeconds: 5.0)
+        if diskutilResult.exitCode == 0 {
+            logTelemetry("Volume \(volumePath) ejetado via diskutil eject com sucesso!")
+            return
+        }
+        
+        // 2. Secundariamente tenta via `diskutil unmount`
+        logTelemetry("diskutil eject retornou \(diskutilResult.exitCode). Tentando diskutil unmount \(volumePath)...")
+        let unmountResult = await runSubprocess(executable: "/usr/sbin/diskutil", arguments: ["unmount", volumePath], timeoutSeconds: 5.0)
+        if unmountResult.exitCode == 0 {
+            logTelemetry("Volume \(volumePath) desmontado via diskutil unmount com sucesso!")
+            return
+        }
+        
+        // 3. Terciariamente tenta via NSWorkspace Cocoa API
         let url = URL(fileURLWithPath: volumePath)
         let workspace = NSWorkspace.shared
-        
         do {
             try workspace.unmountAndEjectDevice(at: url)
             logTelemetry("Volume \(volumePath) ejetado via NSWorkspace com sucesso!")
+            return
         } catch {
-            logTelemetry("NSWorkspace falhou ao ejetar \(volumePath) (\(error.localizedDescription)). Tentando via diskutil eject...", isError: true)
-            let result = await runSubprocess(executable: "/usr/sbin/diskutil", arguments: ["eject", volumePath], timeoutSeconds: 3.0)
-            if result.exitCode == 0 {
-                logTelemetry("Volume \(volumePath) ejetado via diskutil com sucesso!")
+            let stderrStr = String(data: diskutilResult.stderr, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let detail = (stderrStr != nil && !stderrStr!.isEmpty) ? stderrStr! : error.localizedDescription
+            logTelemetry("Ejeção de \(volumePath) falhou em todas as tentativas: \(detail)", isError: true)
+            
+            let friendlyMessage: String
+            if detail.contains("47") || detail.contains("busy") || detail.contains("Dissented") || (error as NSError).code == -47 {
+                friendlyMessage = "O volume está sendo usado por processos do sistema ou aplicativos. Encerre os processos ou use a Ejeção Forçada."
             } else {
-                let errOutput = String(data: result.stderr, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
-                let detail = (errOutput != nil && !errOutput!.isEmpty) ? errOutput! : error.localizedDescription
-                logTelemetry("Falha ao ejetar volume \(volumePath): \(detail)", isError: true)
-                
-                let friendlyMessage: String
-                if detail.contains("47") || detail.contains("busy") || (error as NSError).code == -47 {
-                    friendlyMessage = "O volume está em uso por outros aplicativos. Encerre os processos ou use a Ejeção Forçada."
-                } else {
-                    friendlyMessage = "Falha ao ejetar volume: \(detail)"
-                }
-                
-                throw NSError(
-                    domain: "SSDMonitor.TelemetryService",
-                    code: -47,
-                    userInfo: [NSLocalizedDescriptionKey: friendlyMessage]
-                )
+                friendlyMessage = "Falha ao ejetar volume: \(detail)"
             }
+            
+            throw NSError(
+                domain: "SSDMonitor.TelemetryService",
+                code: -47,
+                userInfo: [NSLocalizedDescriptionKey: friendlyMessage]
+            )
         }
     }
 }
