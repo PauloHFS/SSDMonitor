@@ -25,7 +25,7 @@ struct DiskWatcherTests {
             ActiveProcess(pid: 999, name: "Final Cut Pro", openFiles: ["/file.mov"])
         ]
 
-        let watcher = DiskWatcher(telemetry: mockTelemetry)
+        let watcher = DiskWatcher(telemetry: mockTelemetry, volumeLister: { [] })
         watcher.stopTimer() // Parar o timer de polling automático para controle determinístico do teste
         watcher.targetMountPoint = tempVolume.path
 
@@ -45,7 +45,7 @@ struct DiskWatcherTests {
 
     @Test func testDiskWatcher_UnmountedVolume_ResetsStateAndSetsStatusMessage() async throws {
         let mockTelemetry = MockTelemetryProvider()
-        let watcher = DiskWatcher(telemetry: mockTelemetry)
+        let watcher = DiskWatcher(telemetry: mockTelemetry, volumeLister: { [] })
         watcher.stopTimer()
         watcher.targetMountPoint = "/Volumes/NonExistentDisk_\(UUID().uuidString)"
 
@@ -69,7 +69,7 @@ struct DiskWatcherTests {
         mockTelemetry.onUnmount = { path in
             try? FileManager.default.removeItem(atPath: path)
         }
-        let watcher = DiskWatcher(telemetry: mockTelemetry)
+        let watcher = DiskWatcher(telemetry: mockTelemetry, volumeLister: { [] })
         watcher.stopTimer()
         watcher.targetMountPoint = tempVolume.path
         watcher.refreshAll()
@@ -95,7 +95,7 @@ struct DiskWatcherTests {
         let mockTelemetry = MockTelemetryProvider()
         mockTelemetry.unmountShouldFail = true
 
-        let watcher = DiskWatcher(telemetry: mockTelemetry)
+        let watcher = DiskWatcher(telemetry: mockTelemetry, volumeLister: { [] })
         watcher.stopTimer()
         watcher.targetMountPoint = tempVolume.path
         watcher.refreshAll()
@@ -115,7 +115,7 @@ struct DiskWatcherTests {
         let mockTelemetry = MockTelemetryProvider()
         mockTelemetry.killResultToReturn = true
 
-        let watcher = DiskWatcher(telemetry: mockTelemetry)
+        let watcher = DiskWatcher(telemetry: mockTelemetry, volumeLister: { [] })
         watcher.stopTimer()
 
         watcher.killProcess(pid: 1234)
@@ -124,5 +124,20 @@ struct DiskWatcherTests {
 
         #expect(watcher.statusMessage == "Processo 1234 encerrado com sucesso.")
         #expect(watcher.errorMessage == nil)
+    }
+    @Test func testDiskWatcher_VolumeDiscovery_ListsAndSelectsAvailableVolumes() async throws {
+        let volA = TargetVolume(name: "VolumeA", mountPoint: "/Volumes/VolumeA", bsdNode: "/dev/disk5")
+        let volB = TargetVolume(name: "VolumeB", mountPoint: "/Volumes/VolumeB", bsdNode: "/dev/disk6")
+        let mockTelemetry = MockTelemetryProvider()
+
+        let watcher = DiskWatcher(telemetry: mockTelemetry, volumeLister: { [volA, volB] })
+        watcher.stopTimer()
+
+        #expect(watcher.availableVolumes.count == 2)
+        #expect(watcher.availableVolumes == [volA, volB])
+
+        watcher.selectVolume(volB)
+        #expect(watcher.targetVolume == volB)
+        #expect(watcher.targetMountPoint == "/Volumes/VolumeB")
     }
 }

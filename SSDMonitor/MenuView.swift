@@ -66,10 +66,36 @@ public struct MenuView: View {
                 .foregroundColor(watcher.isMounted ? .accentColor : .orange)
             
             VStack(alignment: .leading, spacing: 2) {
-                Text(watcher.targetVolumeName)
-                    .font(.headline)
-                    .lineLimit(1)
-                
+                if !watcher.availableVolumes.isEmpty {
+                    Menu {
+                        ForEach(watcher.availableVolumes, id: \.mountPoint) { vol in
+                            Button(action: {
+                                watcher.selectVolume(vol)
+                            }) {
+                                HStack {
+                                    Text(vol.name)
+                                    if vol.name == watcher.targetVolumeName {
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text(watcher.targetVolumeName)
+                                .font(.headline)
+                                .lineLimit(1)
+                            Image(systemName: "chevron.up.chevron.down")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .menuStyle(.borderlessButton)
+                } else {
+                    Text(watcher.targetVolumeName)
+                        .font(.headline)
+                        .lineLimit(1)
+                }
                 HStack(spacing: 6) {
                     if watcher.isMounted {
                         Text(watcher.bsdIdentifier)
@@ -397,7 +423,6 @@ public struct MenuView: View {
                 HStack(alignment: .top, spacing: 8) {
                     Image(systemName: "info.circle.fill")
                         .foregroundColor(.blue)
-                        .font(.body)
                     Text("O SSDMonitor detectará automaticamente o disco assim que ele for conectado ao Mac em \(watcher.targetMountPoint).")
                         .font(.caption)
                         .foregroundColor(.secondary)
@@ -411,6 +436,36 @@ public struct MenuView: View {
             )
             .padding(.horizontal, 4)
             
+            if !watcher.availableVolumes.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Outros SSDs Externos Conectados:")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.secondary)
+                    
+                    ForEach(watcher.availableVolumes, id: \.mountPoint) { vol in
+                        Button(action: {
+                            watcher.selectVolume(vol)
+                        }) {
+                            HStack {
+                                Image(systemName: "externaldrive.fill")
+                                    .foregroundColor(.accentColor)
+                                Text(vol.name)
+                                    .fontWeight(.medium)
+                                Spacer()
+                                Text("Monitorar Este")
+                                    .font(.caption2)
+                                    .foregroundColor(.accentColor)
+                            }
+                            .padding(8)
+                            .background(Color.accentColor.opacity(0.1))
+                            .cornerRadius(6)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 4)
+            }
             Button(action: {
                 watcher.refreshAll()
             }) {

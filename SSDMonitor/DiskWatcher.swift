@@ -35,6 +35,7 @@ public final class DiskWatcher: ObservableObject {
     @Published public var rawSmartError: String? = nil
     @Published public var storageInfo: StorageInfo? = nil
     @Published public var activeProcesses: [ActiveProcess] = []
+    @Published public var availableVolumes: [TargetVolume] = []
     
     @Published public var isRefreshing: Bool = false
     @Published public var lastUpdated: Date? = nil
@@ -42,25 +43,34 @@ public final class DiskWatcher: ObservableObject {
     @Published public var statusMessage: String? = nil
     @Published public var isEjecting: Bool = false
     
+    private let savedVolumeKey = "SelectedTargetVolumeName"
     // MARK: - Private Properties
     
     private var timer: Timer?
- private var notificationObservers: [NSObjectProtocol] = []
- private let telemetry: TelemetryProvider
- 
- // MARK: - Initialization
- 
- public init(telemetry: TelemetryProvider = TelemetryService.shared) {
-    self.telemetry = telemetry
-        // Garante que o diretório de trabalho (CWD) do processo seja o diretório raiz '/',
-        // evitando que o próprio SSDMonitor segure o vnode do volume externo e bloqueie a ejeção.
-        FileManager.default.changeCurrentDirectoryPath("/")
-        logWatcher("Inicializando DiskWatcher para target: \(targetMountPoint)")
+    private var notificationObservers: [NSObjectProtocol] = []
+    private let telemetry: TelemetryProvider
+    public var volumeLister: @Sendable () -> [TargetVolume]
+
+    // MARK: - Initialization
+
+    public init(
+        telemetry: TelemetryProvider = TelemetryService.shared,
+        volumeLister: @escaping @Sendable () -> [TargetVolume] = { TargetVolume.listMountedExternalVolumes() }
+    ) {
+        self.telemetry = telemetry
+        self.volumeLister = volumeLister
+
+        if let savedName = UserDefaults.standard.string(forKey: savedVolumeKey) {
+            self.targetVolume = TargetVolume(name: savedName)
+        } else {
+            self.targetVolume = TargetVolume()
+        }
+
         setupMountObservers()
+        updateAvailableVolumes()
         refreshAll()
         startTimer()
     }
-    
     deinit {
         logWatcher("Finalizando DiskWatcher.")
         timer?.invalidate()
@@ -122,9 +132,30 @@ public final class DiskWatcher: ObservableObject {
         }
     }
     
+    // MARK: - Volume Discovery & Selection
+    
+    public func updateAvailableVolumes() {
+        let mounted = volumeLister()
+        self.availableVolumes = mounted
+        
+        if !targetVolume.isMounted, let firstAvailable = mounted.first(where: { $0.isMounted }) {
+            selectVolume(firstAvailable)
+        }
+    }
+    
+    public func selectVolume(_ volume: TargetVolume) {
+        logWatcher("Volume selecionado: \(volume.name) (\(volume.mountPoint))")
+        self.targetVolume = volume
+        UserDefaults.standard.set(volume.name, forKey: savedVolumeKey)
+        self.statusMessage = nil
+        self.errorMessage = nil
+        refreshAll()
+    }
+    
     // MARK: - Core Refresh Pipeline
     
     public func refreshAll() {
+        updateAvailableVolumes()
         let exists = targetVolume.isMounted
         self.isMounted = exists
         
